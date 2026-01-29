@@ -26,10 +26,10 @@ class QRScannerApp(App):
     
     # 3. Исправление ориентации (Canvas)
     with self.camera.canvas.before:
-        PushMatrix()
-        self.rot = Rotate(angle=90, origin=self.camera.center)
+      PushMatrix()
+      self.rot = Rotate(angle=90, origin=self.camera.center)
     with self.camera.canvas.after:
-        PopMatrix()
+      PopMatrix()
     self.camera.bind(center=lambda inv, val: setattr(self.rot, 'origin', val))
 
     # 4. Кнопка ссылки
@@ -51,7 +51,7 @@ class QRScannerApp(App):
     self.url_pattern = re.compile(r'https?://[^\s]+')
     self.last_url = None
     
-    Clock.schedule_interval(self.update, 1.0 / 5.0)
+    Clock.schedule_interval(self.update, 1.0 / 8.0)
     return self.layout
 
   def switch_cam(self, instance):
@@ -75,32 +75,36 @@ class QRScannerApp(App):
   def update(self, dt):
     if not self.camera.texture: return
 
-    texture = self.camera.texture
-    pil_img = Image.frombytes(
-      mode='RGBA', size=texture.size, data=texture.pixels)
-    
-    pil_img = decode(pil_img.convert('L'))
-    enhancer = ImageEnhance.Contrast(pil_img)
-    pil_img = enhancer.enhance(2.0) # Увеличиваем контраст в 2 раза
-    
-    # Пробуем декодировать с разворотом (для анализа)
-    decoded_objects = []
-    for angle in [0, 90]:
-      res = decode(pil_img.rotate(angle, expand=True))
-      if res:
-        decoded_objects = res
-        break
+    try:
+      texture = self.camera.texture
+      # 1. Сначала создаем PIL-объект
+      pil_img = Image.frombytes(
+        mode='RGBA', size=texture.size, data=texture.pixels).convert('L')
       
-    if decoded_objects:
-      url = decoded_objects[0].data.decode('utf-8').strip()
-      if self.url_pattern.match(url): #and url != self.last_url:
-        self.current_url = url
-        self.link_btn.text = f"ОТКРЫТЬ: {url[:35]}..."
-        self.link_btn.height = dp(70)
+      # 2. Улучшаем контраст ИЗОБРАЖЕНИЯ
+      enhancer = ImageEnhance.Contrast(pil_img)
+      pil_img = enhancer.enhance(2.0)
+      
+      # 3. Ищем коды
+      decoded_res = None
+      for angle in [0, 90]:
+        res = decode(pil_img.rotate(angle, expand=True))
+        if res:
+          decoded_res = res
+          break
         
-        # Перезапускаем таймер скрытия (3 секунды)
-        Clock.unschedule(self.hide_button)
-        Clock.schedule_once(self.hide_button, 3)
+      if decoded_res:
+        # Берем данные из первого найденного кода в списке
+        url = decoded_res[0].data.decode('utf-8').strip()
+        if self.url_pattern.match(url):
+          self.current_url = url
+          self.link_btn.text = f"ОТКРЫТЬ: {url[:30]}..."
+          self.link_btn.height = dp(70)
+          
+          Clock.unschedule(self.hide_button)
+          Clock.schedule_once(self.hide_button, 3)
+    except Exception as e:
+      print(f"Update error: {e}")
 
 if __name__ == '__main__':
     QRScannerApp().run()

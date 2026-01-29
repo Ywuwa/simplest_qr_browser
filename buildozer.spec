@@ -40,7 +40,7 @@ version = 0.1
 requirements = python3,kivy==2.3.0,pillow,pyzbar,libzbar,hostpython3
 
 # (list) Blacklist - модули, которые будут удалены из сборки для экономии места
-android.p4a_blacklist = sqlite3, openssl, http, ftplib, smtplib, pydoc, bz2, curses, decimal, enum34, telnetlib, unicodedata, _ssl, _hashlib
+android.p4a_blacklist = sqlite3,openssl,http,ftplib,smtplib,pydoc,bz2,curses,decimal,enum34,telnetlib,unicodedata,_ssl,_hashlib
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -105,10 +105,10 @@ android.permissions = CAMERA, INTERNET
 #android.features = android.hardware.usb.host
 
 # (int) Target Android API, should be as high as possible.
-#android.api = 33
+android.api = 33
 
 # (int) Minimum API your APK / AAB will support.
-#android.minapi = 21
+android.minapi = 21
 
 # (int) Android SDK version to use
 #android.sdk = 20
