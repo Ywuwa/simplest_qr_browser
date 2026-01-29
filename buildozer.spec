@@ -59,6 +59,9 @@ orientation = portrait
 # (list) List of service to declare
 #services = NAME:ENTRYPOINT_TO_PY,NAME2:ENTRYPOINT2_TO_PY
 
+# Enable autofocus
+android.manifest.features = android.hardware.camera.autofocus
+
 #
 # OSX Specific
 #
@@ -240,7 +243,7 @@ android.minapi = 21
 #android.ouya.icon.filename = %(source.dir)s/data/ouya_icon.png
 
 # (str) XML file to include as an intent filters in <activity> tag
-#android.manifest.intent_filters =
+#android.manifest.intent_filters = android.hardware.camera.autofocus
 
 # (list) Copy these files to src/main/res/xml/ (used for example with intent-filters)
 #android.res_xml = PATH_TO_FILE,

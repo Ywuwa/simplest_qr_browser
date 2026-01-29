@@ -6,7 +6,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.clock import Clock
 from pyzbar.pyzbar import decode
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageOps
 from kivy.utils import platform
 from kivy.graphics import Rotate, PushMatrix, PopMatrix
 from kivy.metrics import dp
@@ -17,17 +17,17 @@ class QRScannerApp(App):
     if platform == 'android':
         from android.permissions import request_permissions, Permission
         request_permissions([Permission.CAMERA, Permission.INTERNET])
-
+    self.camera.play = True
     self.layout = BoxLayout(orientation='vertical')
 
     # 2. Камера
-    self.camera = Camera(index=0, resolution=(640, 480), 
+    self.camera = Camera(index=0, resolution=(960, 640), 
                          play=True, allow_stretch=True, keep_ratio=True)
     
     # 3. Исправление ориентации (Canvas)
     with self.camera.canvas.before:
       PushMatrix()
-      self.rot = Rotate(angle=90, origin=self.camera.center)
+      self.rot = Rotate(angle=-90, origin=self.camera.center)
     with self.camera.canvas.after:
       PopMatrix()
     self.camera.bind(center=lambda inv, val: setattr(self.rot, 'origin', val))
@@ -58,8 +58,8 @@ class QRScannerApp(App):
     # Чтобы избежать артефактов, останавливаем камеру перед сменой индекса
     self.camera.play = False
     self.camera.index = 1 if self.camera.index == 0 else 0
-    # Меняем угол: если на одной 90, на другой часто нужно -90 (или 270)
-    self.rot.angle = -90 if self.camera.index == 1 else 90
+    # Меняем угол: если на одной -90, на другой часто нужно 90 (или 270)
+    self.rot.angle = 90 if self.camera.index == 1 else -90
     Clock.schedule_once(lambda dt: setattr(self.camera, 'play', True), 0.2)
     
   def open_link(self, instance):
@@ -82,8 +82,7 @@ class QRScannerApp(App):
         mode='RGBA', size=texture.size, data=texture.pixels).convert('L')
       
       # 2. Улучшаем контраст ИЗОБРАЖЕНИЯ
-      enhancer = ImageEnhance.Contrast(pil_img)
-      pil_img = enhancer.enhance(2.0)
+      pil_img = ImageEnhance.Contrast(pil_img).enhance(2.0)
       
       # 3. Ищем коды
       decoded_res = None
@@ -93,14 +92,19 @@ class QRScannerApp(App):
           decoded_res = res
           break
         
+      # Если не нашли — пробуем инверсию (для Telegram кодов)
+      if not decoded_res[0]:
+        decoded_res[0] = decode(ImageOps.invert(pil_img))
+        
       if decoded_res:
         # Берем данные из первого найденного кода в списке
         url = decoded_res[0].data.decode('utf-8').strip()
         if self.url_pattern.match(url):
           self.current_url = url
+          if self.current_url:
+            webbrowser.open(self.current_url)
           self.link_btn.text = f"ОТКРЫТЬ: {url[:30]}..."
-          self.link_btn.height = dp(70)
-          
+          self.link_btn.height = dp(70)        
           Clock.unschedule(self.hide_button)
           Clock.schedule_once(self.hide_button, 3)
     except Exception as e:
