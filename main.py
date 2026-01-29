@@ -17,7 +17,7 @@ class QRScannerApp(App):
     if platform == 'android':
         from android.permissions import request_permissions, Permission
         request_permissions([Permission.CAMERA, Permission.INTERNET])
-    self.camera.play = True
+    
     self.layout = BoxLayout(orientation='vertical')
 
     # 2. Камера
