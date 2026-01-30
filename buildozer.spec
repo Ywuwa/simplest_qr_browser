@@ -37,7 +37,7 @@ version = 0.1
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy==2.3.0,pillow,pyzbar,libzbar,hostpython3
+requirements = python3,kivy==2.3.0,pillow,pyzbar,libzbar,hostpython3,android
 
 # (list) Blacklist - модули, которые будут удалены из сборки для экономии места
 android.p4a_blacklist = sqlite3,openssl,http,ftplib,smtplib,pydoc,bz2,curses,decimal,enum34,telnetlib,unicodedata,_ssl,_hashlib
@@ -61,6 +61,8 @@ orientation = portrait
 
 # Enable autofocus
 android.manifest.features = android.hardware.camera.autofocus
+android.manifest.uses_features = android.hardware.camera, android.hardware.camera.autofocus
+android.add_meta_data = android.hardware.camera.autofocus.continuous-video
 
 #
 # OSX Specific
@@ -102,7 +104,7 @@ fullscreen = 0
 # (list) Permissions
 # (See https://python-for-android.readthedocs.io/en/latest/buildoptions/#build-options-1 for all the supported syntaxes and properties)
 #android.permissions = android.permission.INTERNET, (name=android.permission.WRITE_EXTERNAL_STORAGE;maxSdkVersion=18)
-android.permissions = CAMERA, INTERNET
+android.permissions = android.permission.CAMERA
 
 # (list) features (adds uses-feature -tags to manifest)
 #android.features = android.hardware.usb.host
