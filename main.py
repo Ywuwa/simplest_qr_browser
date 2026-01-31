@@ -36,21 +36,20 @@ class QRScannerApp(App):
             PopMatrix()
         self.camera.bind(center=lambda inv, val: setattr(self.rot, 'origin', val))
         
-        # 3. Кнопка ссылки (высота 0 — скрыта)
-        self.link_btn = Button(text="", size_hint_y=None, height=0, 
+        # 3. Кнопка ссылки
+        self.link_btn = Button(text="", size_hint_y=None, height=dp(30), 
                                background_color=(0.6, 0.6, 0.8, 1))
         self.link_btn.bind(on_press=self.open_link)
 
         # 4. Кнопка смены камеры
         self.switch_btn = Button(text="Сменить камеру", 
-                                 size_hint_y=None, height=dp(50))
+                                 size_hint_y=None, height=dp(60))
         self.switch_btn.bind(on_press=self.switch_cam)
 
         # 5. Кнопка бубнёжки
         self.notific_btn = Button(text="", 
-                                  size_hint_y=None, height=dp(25),
+                                  size_hint_y=None, height=dp(30),
                                   background_color=(0.0, 0.7, 0.1, 1))
-        #self.switch_btn.bind(on_press=self.switch_cam)
 
         self.layout.add_widget(self.camera)
         self.layout.add_widget(self.link_btn)
@@ -62,20 +61,33 @@ class QRScannerApp(App):
         self.is_scanning = True    # флаг блокировки сканера
         self.frame_number = 0      # счётчик кадров
 
-        Clock.schedule_interval(self.update, 1.0 / 4.0)
+        Clock.schedule_interval(self.update, 1.0 / 5.0)
         return self.layout
     
     def switch_cam(self, instance):
+        old_index = self.camera.index
+        new_index = 1 if old_index == 0 else 0
+        
         try:
             self.camera.play = False
-            self.camera.index = 1 if self.camera.index == 0 else 0
-            self.rot.angle = 90 if self.camera.index == 1 else -90
-            Clock.schedule_once(lambda dt: setattr(self.camera, 'play', True), 0.1)
+            self.camera.index = new_index
+            self.rot.angle = 90 if new_index == 1 else -90
+            Clock.schedule_once(self._try_restart_camera, 0.1)
+            
+        except Exception as e:
+            self._handle_switch_error(old_index)
+
+    def _try_restart_camera(self, dt):
+        try:
+            self.camera.play = True
         except:
-            self.switch_btn.text = "не смею смотреть на вас..."
-            Clock.schedule_once(
-              lambda dt: setattr(self.switch_btn, 'text', "Сменить камеру"), 1.0)
-            pass
+            self._handle_switch_error(0)
+
+    def _handle_switch_error(self, fallback_index):
+        self.camera.index = fallback_index
+        self.camera.play = True
+        self.switch_btn.text = "не смею смотреть на вас..."
+        Clock.schedule_once(lambda dt: setattr(self.switch_btn, 'text', "Сменить камеру"), 1.5)
 
     def open_link(self, instance):
         if self.current_url:
@@ -127,8 +139,6 @@ class QRScannerApp(App):
             res = None
             if self.frame_number%2 == 0:
               self.complain_message = "..."
-              self.link_btn.text = "рассматриваю..."
-              self.link_btn.height = dp(25)
 
               # 1. Проход по обычному изображению
               for angle in [0, 90]:
@@ -165,7 +175,7 @@ class QRScannerApp(App):
                       self.is_scanning = False  
                       self.current_url = url
                       self.link_btn.text = f"ОТКРЫТЬ: {url[:25]}..."
-                      self.link_btn.height = dp(50)   
+                      self.link_btn.height = dp(60)   
                       Clock.unschedule(self.hide_btn)
                       Clock.schedule_once(self.hide_btn, 4)
 
