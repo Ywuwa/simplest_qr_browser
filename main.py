@@ -10,6 +10,8 @@ from PIL import Image, ImageEnhance, ImageOps
 from kivy.utils import platform
 from kivy.graphics import Rotate, PushMatrix, PopMatrix
 from kivy.metrics import dp
+import threading
+
 from handle_camera import CameraHandler
 
 class QRScannerApp(App, CameraHandler):
@@ -68,38 +70,57 @@ class QRScannerApp(App, CameraHandler):
         if self.current_url:
             webbrowser.open(self.current_url)
             # 1. Прячем кнопку СРАЗУ, но НЕ включаем scanning здесь
-            self.link_btn.height = dp(30)
-            self.link_btn.text = ""
-            self.current_url = None
+            self.link_btn_to_default()
             
             if self.camera:
                 self.camera.play = False
                 # 2. Включаем камеру через 0.2 сек
                 Clock.schedule_once(self._resume_camera, 0.2)
 
-    def _resume_camera(self, dt):
+    def _resume_camera(self, *dt):
         self.camera.play = True
         # 3. А сканирование разрешаем еще через 0.5 сек, 
         # когда текстура ТОЧНО прогрузится
         Clock.schedule_once(self._enable_scan, 0.5)
 
-    def _enable_scan(self, dt):
+    def _enable_scan(self, *dt):
         self.is_scanning = True
 
-    def hide_btn(self, *dt):
+    def link_btn_to_default(self, *dt):
+        self.link_btn.background_color = (0.6, 0.6, 0.8, 1)
         self.link_btn.height = dp(30)
         self.link_btn.text = ""
         self.current_url = None
+        
+    def hide_btn(self, *dt):
+        self.link_btn_to_default()
         self.is_scanning = True
 
-    def update(self, dt):
+    def update(self, *dt):
         if not self.camera.texture or not self.is_scanning: return
-
+        
+        Clock.schedule_once(
+            lambda dt: setattr(
+              self.link_btn, 'text', "рассматриваюююуууу..."), 0)
+        frame_data = self.camera.texture.pixels 
+        frame_size = self.camera.texture.size
+        # Блокируем создание новых потоков сразу
+        self.is_scanning = False
+        
+        # Запускаем один поток для одного анализа
+        thread = threading.Thread(
+            target=self.scan_frame_task, 
+            args=(frame_data, frame_size)
+        )
+        # daemon=True гарантирует, что поток умрет при закрытии приложения
+        thread.daemon = True 
+        thread.start()
+        
+    def scan_frame_task(self, frame_data, frame_size):
+        found_valid_url = False
         try:
             self.frame_number = (self.frame_number + 1) % 10
-            pil_img = Image.frombytes('RGBA', 
-                                      self.camera.texture.size, 
-                                      self.camera.texture.pixels)
+            pil_img = Image.frombytes('RGBA', frame_size, frame_data)
 
             pil_img = pil_img.convert('RGB').convert('L')
             # ИСПРАВЛЯЕМ ОРИЕНТАЦИЮ KIVY (чаще всего это -1 по вертикали)
@@ -114,8 +135,6 @@ class QRScannerApp(App, CameraHandler):
             res = None
             # анализ изображения каждые два кадра
             if self.frame_number % 2 == 0:
-              self.complain_message = "..."
-
               # 1. Проход по обычному изображению
               for angle in [0, 90]:
                 pil_img_rot = pil_img if angle==0 else pil_img.rotate(angle, expand=True)
@@ -142,24 +161,36 @@ class QRScannerApp(App, CameraHandler):
                       res = found
                       break
 
-              self.link_btn.text = "рассматриваюююуууу..."
               if res:
-                  self.link_btn.text = "что-то похожее..."
                   url = res[0].data.decode('utf-8', errors='replace').strip()
-                  self.link_btn.text = "что-то похожее на..." + url
+                  
                   if self.url_pattern.match(url):
-                      self.is_scanning = False  
+                      found_valid_url = True 
+                      #self.is_scanning = False  
                       self.current_url = url
-                      self.link_btn.text = f"ОТКРЫТЬ: {url[:25]}..."
-                      self.link_btn.height = dp(60)   
-                      Clock.unschedule(self.hide_btn)
-                      Clock.schedule_once(self.hide_btn, 4)
+                      Clock.schedule_once(lambda dt: self._show_url_ui(url))
+                  else:
+                    Clock.schedule_once(
+                      lambda dt: setattr(
+                        self.link_btn, 'text', "что-то похожее на..." + url), 0)
 
         except Exception:
-            self.notific_btn.text = self.complain_message
             Clock.schedule_once(
               lambda dt: setattr(self.notific_btn, 'text', "сложна..."), 1.5)
             pass
+        finally:
+          # Разблокируем, только если НЕ нашли ссылку
+          if not found_valid_url:
+              self.is_scanning = True
+              
+    def _show_url_ui(self, url):
+      """Выполняется строго в основном потоке"""
+      self.link_btn.text = f"ОТКРЫТЬ: {url[:25]}..."
+      self.link_btn.height = dp(60)
+      self.link_btn.background_color = (0, 0.9, 0.9, 1)
+      # Сбрасываем старые таймеры и ставим новый
+      Clock.unschedule(self.hide_btn)
+      Clock.schedule_once(self.hide_btn, 4)
 
 if __name__ == '__main__':
     QRScannerApp().run()
