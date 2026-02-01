@@ -5,14 +5,14 @@ from kivy.uix.camera import Camera
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.clock import Clock
-from pyzbar.pyzbar import decode
-from pyzbar.pyzbar import ZBarSymbol
+from pyzbar.pyzbar import decode, ZBarSymbol
 from PIL import Image, ImageEnhance, ImageOps
 from kivy.utils import platform
 from kivy.graphics import Rotate, PushMatrix, PopMatrix
 from kivy.metrics import dp
+from handle_camera import CameraHandler
 
-class QRScannerApp(App):
+class QRScannerApp(App, CameraHandler):
     def build(self):
         # Переменная для хранения текущего URL
         self.current_url = None
@@ -28,7 +28,7 @@ class QRScannerApp(App):
         self.camera = Camera(index=0, resolution=(640, 480), 
                              play=True, allow_stretch=True, keep_ratio=True)
         
-        # 2. Исправление ориентации
+        # 2. Исправление ориентации изображения с камеры
         with self.camera.canvas.before:
             PushMatrix()
             self.rot = Rotate(angle=-90, origin=self.camera.center)
@@ -64,36 +64,11 @@ class QRScannerApp(App):
         Clock.schedule_interval(self.update, 1.0 / 5.0)
         return self.layout
     
-    def switch_cam(self, instance):
-        old_index = self.camera.index
-        new_index = 1 if old_index == 0 else 0
-        
-        try:
-            self.camera.play = False
-            self.camera.index = new_index
-            self.rot.angle = 90 if new_index == 1 else -90
-            Clock.schedule_once(self._try_restart_camera, 0.1)
-            
-        except Exception as e:
-            self._handle_switch_error(old_index)
-
-    def _try_restart_camera(self, dt):
-        try:
-            self.camera.play = True
-        except:
-            self._handle_switch_error(0)
-
-    def _handle_switch_error(self, fallback_index):
-        self.camera.index = fallback_index
-        self.camera.play = True
-        self.switch_btn.text = "не смею смотреть на вас..."
-        Clock.schedule_once(lambda dt: setattr(self.switch_btn, 'text', "Сменить камеру"), 1.5)
-
     def open_link(self, instance):
         if self.current_url:
             webbrowser.open(self.current_url)
             # 1. Прячем кнопку СРАЗУ, но НЕ включаем scanning здесь
-            self.link_btn.height = 0
+            self.link_btn.height = dp(30)
             self.link_btn.text = ""
             self.current_url = None
             
@@ -112,7 +87,7 @@ class QRScannerApp(App):
         self.is_scanning = True
 
     def hide_btn(self, *dt):
-        self.link_btn.height = 0
+        self.link_btn.height = dp(30)
         self.link_btn.text = ""
         self.current_url = None
         self.is_scanning = True
@@ -127,17 +102,18 @@ class QRScannerApp(App):
                                       self.camera.texture.pixels)
 
             pil_img = pil_img.convert('RGB').convert('L')
-            # СРАЗУ ИСПРАВЛЯЕМ ОРИЕНТАЦИЮ KIVY (чаще всего это -1 по вертикали)
+            # ИСПРАВЛЯЕМ ОРИЕНТАЦИЮ KIVY (чаще всего это -1 по вертикали)
             pil_img = pil_img.transpose(Image.FLIP_TOP_BOTTOM) 
             # 2. Динамическое выравнивание освещения
-            pil_img = ImageOps.autocontrast(pil_img, cutoff=1)
+            pil_img = ImageOps.autocontrast(pil_img, cutoff=2)
             # Контраст
             pil_img = ImageEnhance.Contrast(pil_img).enhance(2.0)
             # Резкость
-            pil_img = ImageEnhance.Sharpness(pil_img).enhance(1.2)
+            pil_img = ImageEnhance.Sharpness(pil_img).enhance(1.5)
 
             res = None
-            if self.frame_number%2 == 0:
+            # анализ изображения каждые два кадра
+            if self.frame_number % 2 == 0:
               self.complain_message = "..."
 
               # 1. Проход по обычному изображению
@@ -179,7 +155,7 @@ class QRScannerApp(App):
                       Clock.unschedule(self.hide_btn)
                       Clock.schedule_once(self.hide_btn, 4)
 
-        except:
+        except Exception:
             self.notific_btn.text = self.complain_message
             Clock.schedule_once(
               lambda dt: setattr(self.notific_btn, 'text', "сложна..."), 1.5)
