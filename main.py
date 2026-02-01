@@ -166,13 +166,11 @@ class QRScannerApp(App, CameraHandler):
                   
                   if self.url_pattern.match(url):
                       found_valid_url = True 
-                      #self.is_scanning = False  
                       self.current_url = url
                       Clock.schedule_once(lambda dt: self._show_url_ui(url))
                   else:
-                    Clock.schedule_once(
-                      lambda dt: setattr(
-                        self.link_btn, 'text', "что-то похожее на..." + url), 0)
+                      found_valid_url = True
+                      Clock.schedule_once(lambda dt: self._show_url_guess_ui(url))
 
         except Exception:
             Clock.schedule_once(
@@ -191,6 +189,11 @@ class QRScannerApp(App, CameraHandler):
       # Сбрасываем старые таймеры и ставим новый
       Clock.unschedule(self.hide_btn)
       Clock.schedule_once(self.hide_btn, 4)
+      
+    def _show_url_guess_ui(self, url):
+      self.link_btn.text = "что-то похожее на..." + url
+      Clock.unschedule(self.hide_btn)
+      Clock.schedule_once(self.hide_btn, 1)
 
 if __name__ == '__main__':
     QRScannerApp().run()
