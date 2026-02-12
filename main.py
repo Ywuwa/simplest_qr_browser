@@ -5,16 +5,17 @@ from kivy.uix.camera import Camera
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.clock import Clock
-from pyzbar.pyzbar import decode, ZBarSymbol
-from PIL import Image, ImageEnhance, ImageOps
 from kivy.utils import platform
 from kivy.graphics import Rotate, PushMatrix, PopMatrix
 from kivy.metrics import dp
+if platform == 'android':
+    from jnius import autoclass
 import threading
 
 from handle_camera import CameraHandler
+from handle_scanning import ScanningHandler
 
-class QRScannerApp(App, CameraHandler):
+class QRScannerApp(App, CameraHandler, ScanningHandler):
     def build(self):
         # Переменная для хранения текущего URL
         self.current_url = None
@@ -23,7 +24,9 @@ class QRScannerApp(App, CameraHandler):
         if platform == 'android':
             from android.permissions import request_permissions, Permission
             request_permissions([Permission.CAMERA])
-
+        #-----------------------------------------------------------------------
+        
+        #-----------------------------------------------------------------------
         self.layout = BoxLayout(orientation='vertical')
 
         # 1. Камера  640x480 — самая стабильная для этого кода
@@ -43,29 +46,99 @@ class QRScannerApp(App, CameraHandler):
                                background_color=(0.6, 0.6, 0.8, 1))
         self.link_btn.bind(on_press=self.open_link)
 
-        # 4. Кнопка смены камеры
-        self.switch_btn = Button(text="Сменить камеру", 
-                                 size_hint_y=None, height=dp(60))
-        self.switch_btn.bind(on_press=self.switch_cam)
-
-        # 5. Кнопка бубнёжки
+        # 4. Кнопка бубнёжки
         self.notific_btn = Button(text="", 
                                   size_hint_y=None, height=dp(30),
                                   background_color=(0.0, 0.7, 0.1, 1))
-
+        
         self.layout.add_widget(self.camera)
         self.layout.add_widget(self.link_btn)
         self.layout.add_widget(self.notific_btn)
-        self.layout.add_widget(self.switch_btn)
+        #-----------------------------------------------------------------------
+        
+        #-----------------------------------------------------------------------
+        btns_layout = BoxLayout(orientation='horizontal', 
+                                size_hint_y=None, height=dp(60))
+
+        # 5. Кнопка смены камеры
+        self.switch_btn = Button(text="Сменить камеру", 
+                                 size_hint_x=0.75)#, height=dp(60))
+        self.switch_btn.bind(on_press=self.switch_cam)
+        
+        # 5. Кнопка фонарика
+        self.flash_btn = Button(text="==#", 
+                                 size_hint_x=0.25)#, height=dp(60))
+        self.flash_btn.bind(on_press=self.flash_button_pressed)
+        
+        btns_layout.add_widget(self.switch_btn)
+        btns_layout.add_widget(self.flash_btn)
+        
+        self.layout.add_widget(btns_layout)
+        #-----------------------------------------------------------------------
 
         self.url_pattern = re.compile(r'https?://[^\s]+')
         self.complain_message = "" # сообщение о последней выполненной операции
         self.is_scanning = True    # флаг блокировки сканера
         self.frame_number = 0      # счётчик кадров
+        self.flash_enabled = False  # статус фонарика
 
         Clock.schedule_interval(self.update, 1.0 / 5.0)
         return self.layout
-    
+      
+    def on_pause(self):
+        # Обязательно останавливаем камеру при сворачивании
+        self.camera.play = False
+        Clock.unschedule(self.update)
+        # Выключаем фонарик
+        if self.flash_enabled:
+          self.flash_button_pressed(self.flash_btn)
+        # Возвращаем True, чтобы приложение не закрылось, а уснуло
+        return True
+  
+    def on_resume(self):
+        # При возврате в приложение даем системе 0.5 сек 
+        # на восстановление графического контекста и включаем камеру
+        Clock.schedule_once(self._restart_camera, 0.5)
+  
+    def _restart_camera(self, dt):
+        self.camera.play = True
+        Clock.schedule_interval(self.update, 1.0 / 5.0)
+        
+    def set_flashlight(self, state: bool):
+        """Включает или выключает фонарик через Android Camera2 API.      
+        Args:
+            state (bool): True для включения, False для выключения.
+        """
+        if platform != 'android':
+            print("Фонарик доступен только на Android")
+            return
+
+        try:
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Context = autoclass('android.content.Context')
+            activity = PythonActivity.mActivity
+            camera_manager = activity.getSystemService(Context.CAMERA_SERVICE)
+            
+            # '0' — обычно ID основной задней камеры с фонариком
+            camera_id = camera_manager.getCameraIdList()[0]
+            camera_manager.setTorchMode(camera_id, state)
+        except Exception as e:
+            print(f"Ошибка управления фонариком: {e}")
+            
+    def flash_button_pressed(self, instance):
+        self.flash_enabled = not self.flash_enabled
+        instance.text = "==# [ВКЛ]" if self.flash_enabled else "==#"
+        try:
+            # Пытаемся вызвать нативный метод Kivy-камеры для Android
+            if self.flash_enabled:
+                self.camera._camera.set_flash_mode('torch')
+            else:
+                self.camera._camera.set_flash_mode('off')
+        except Exception as e:
+            print(f"Способ Б не сработал: {e}")
+            # Если не вышло, вызываем ваш метод через jnius (Способ 4)
+            self.set_flashlight(self.flash_enabled)
+      
     def open_link(self, instance):
         if self.current_url:
             webbrowser.open(self.current_url)
@@ -86,17 +159,12 @@ class QRScannerApp(App, CameraHandler):
     def _enable_scan(self, *dt):
         self.is_scanning = True
 
-    def link_btn_to_default(self, *dt):
-        self.link_btn.background_color = (0.6, 0.6, 0.8, 1)
-        self.link_btn.height = dp(30)
-        self.link_btn.text = ""
-        self.current_url = None
-        
-    def hide_btn(self, *dt):
-        self.link_btn_to_default()
-        self.is_scanning = True
-
     def update(self, *dt):
+        """
+        Сканирует изображение, если есть что сканировать и сканер активен
+        Сканирование происходит в отдельном потоке
+  
+        """
         if not self.camera.texture or not self.is_scanning: return
         
         Clock.schedule_once(
@@ -115,85 +183,6 @@ class QRScannerApp(App, CameraHandler):
         # daemon=True гарантирует, что поток умрет при закрытии приложения
         thread.daemon = True 
         thread.start()
-        
-    def scan_frame_task(self, frame_data, frame_size):
-        found_valid_url = False
-        try:
-            self.frame_number = (self.frame_number + 1) % 10
-            pil_img = Image.frombytes('RGBA', frame_size, frame_data)
-
-            pil_img = pil_img.convert('RGB').convert('L')
-            # ИСПРАВЛЯЕМ ОРИЕНТАЦИЮ KIVY (чаще всего это -1 по вертикали)
-            pil_img = pil_img.transpose(Image.FLIP_TOP_BOTTOM) 
-            # 2. Динамическое выравнивание освещения
-            pil_img = ImageOps.autocontrast(pil_img, cutoff=2)
-            # Контраст
-            pil_img = ImageEnhance.Contrast(pil_img).enhance(2.0)
-            # Резкость
-            pil_img = ImageEnhance.Sharpness(pil_img).enhance(1.5)
-
-            res = None
-            # анализ изображения каждые два кадра
-            if self.frame_number % 2 == 0:
-              # 1. Проход по обычному изображению
-              for angle in [0, 90]:
-                pil_img_rot = pil_img if angle==0 else pil_img.rotate(angle, expand=True)
-                found = decode(pil_img_rot, symbols=[ZBarSymbol.QRCODE])
-                if found:
-                    res = found
-                    break
-              # 2. Отзеркаливание по горизонтали, если код не найден
-              if not res:
-                for angle in [0, 90]:
-                  pil_img = pil_img.transpose(Image.FLIP_LEFT_RIGHT) 
-                  pil_img_rot = pil_img if angle==0 else pil_img.rotate(angle, expand=True)
-                  found = decode(pil_img_rot, symbols=[ZBarSymbol.QRCODE])
-                  if found:
-                      res = found
-                      break
-              # 3. Отзеркаливание по горизонтали, если код до сих пор не найден
-              if not res:
-                for angle in [0, 90]:
-                  pil_img = pil_img.transpose(Image.FLIP_TOP_BOTTOM) 
-                  pil_img_rot = pil_img if angle==0 else pil_img.rotate(angle, expand=True)
-                  found = decode(pil_img_rot, symbols=[ZBarSymbol.QRCODE])
-                  if found:
-                      res = found
-                      break
-
-              if res:
-                  url = res[0].data.decode('utf-8', errors='replace').strip()
-                  
-                  if self.url_pattern.match(url):
-                      found_valid_url = True 
-                      self.current_url = url
-                      Clock.schedule_once(lambda dt: self._show_url_ui(url))
-                  else:
-                      found_valid_url = True
-                      Clock.schedule_once(lambda dt: self._show_url_guess_ui(url))
-
-        except Exception:
-            Clock.schedule_once(
-              lambda dt: setattr(self.notific_btn, 'text', "сложна..."), 1.5)
-            pass
-        finally:
-          # Разблокируем, только если НЕ нашли ссылку
-          if not found_valid_url:
-              self.is_scanning = True
-              
-    def _show_url_ui(self, url):
-      """Выполняется строго в основном потоке"""
-      self.link_btn.text = f"ОТКРЫТЬ: {url[:25]}..."
-      self.link_btn.height = dp(60)
-      self.link_btn.background_color = (0, 0.9, 0.9, 1)
-      # Сбрасываем старые таймеры и ставим новый
-      Clock.unschedule(self.hide_btn)
-      Clock.schedule_once(self.hide_btn, 4)
-      
-    def _show_url_guess_ui(self, url):
-      self.link_btn.text = "что-то похожее на..." + url
-      Clock.unschedule(self.hide_btn)
-      Clock.schedule_once(self.hide_btn, 1)
 
 if __name__ == '__main__':
     QRScannerApp().run()

@@ -2,6 +2,10 @@ from kivy.clock import Clock
 
 class CameraHandler:
     def switch_cam(self, instance):
+        """
+        Переключает камеру с фронтальной на веб и обратно (если это возможно)
+
+        """
         old_index = self.camera.index
         new_index = 1 if old_index == 0 else 0
         
